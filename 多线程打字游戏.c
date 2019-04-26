@@ -6,28 +6,33 @@
 #include <ctype.h>
 #include <conio.h>
 
-int letterCount = 100;  //ÏÂÂä×ÖÄ¸µÄ×ÜÊıÁ¿
-int beginFlag = 1;  //ÓÎÏ·ºÎÊ±½áÊø£¬0-±íÊ¾½áÊø
-int downCount;  //ÏÂÂä×ÖÄ¸ÊıÁ¿Í³¼Æ
-int dropLetter; //´òµô×ÖÄ¸ÊıÁ¿Í³¼Æ
-int errorCount; //°´¼ü´íÎóÍ³¼Æ
-int speed = 500;    //ÏÂÂäËÙ¶È
-int bulletSpeed = 30;   //×Óµ¯ËÙ¶È
-CRITICAL_SECTION cs;    //Ïß³ÌËø
-
+//å­—æ¯ç»“æ„ä½“
 typedef struct tag_letter
 {
-    int x, y;
-    char ch;
-    int life;
+    int x, y;   //å­—æ¯ä¸‹è½ä½ç½®
+    char ch;    //å­—æ¯
+    int life;   //å­—æ¯æ˜¯å¦å­˜æ´»
 }Letter;
-Letter *letters;
 
-int *vis;
-int *visBullet;
-int *bulletflag;
+/********************å…¨å±€å˜é‡åŒº************************/
+int letterCount = 100;  //ä¸‹è½å­—æ¯çš„æ€»æ•°é‡
+int beginFlag = 1;  //æ¸¸æˆä½•æ—¶ç»“æŸï¼Œ0-è¡¨ç¤ºç»“æŸ
+int downCount;  //ä¸‹è½å­—æ¯æ•°é‡ç»Ÿè®¡
+int dropLetter; //æ‰“æ‰å­—æ¯æ•°é‡ç»Ÿè®¡
+int errorCount; //æŒ‰é”®é”™è¯¯ç»Ÿè®¡
+int speed = 500;    //ä¸‹è½é€Ÿåº¦
+int bulletSpeed = 30;   //å­å¼¹é€Ÿåº¦
+//å¤šçº¿ç¨‹-çº¿ç¨‹é”
+CRITICAL_SECTION csCursor;//å…‰æ ‡é”
 
-void initLetters()
+
+Letter *letters;    //åˆ›å»ºå­—æ¯åºåˆ—
+int *vis;           //æ ‡è®°å­—æ¯æ˜¯å¦å‡ºç°è¿‡
+int *visBullet;     //æ ‡è®°å¯¹åº”å­—æ¯æ˜¯å¦æœ‰å­å¼¹æ­£åœ¨å‘å°„
+int *bulletflag;    //å­å¼¹ç¼–å·
+
+//åˆå§‹åŒ–å…¨å±€å˜é‡ï¼Œå’Œå¼€è¾Ÿå¯¹åº”æ•°ç»„ç©ºé—´
+void init()
 {
     downCount = 0;
     dropLetter = 0;
@@ -37,11 +42,18 @@ void initLetters()
     bulletflag = (int *)malloc(sizeof(int) * letterCount);
     memset(vis, 0, sizeof(int) * letterCount);
     memset(visBullet, 0, sizeof(int) * letterCount);
+    for(int i = 0; i < letterCount; i++)
+    {
+        bulletflag[i] = i;
+    }
+}
+//åˆå§‹åŒ–å­—æ¯åºåˆ—
+void initLetters()
+{
     letters = (struct tag_letter *)malloc(sizeof(struct tag_letter) * letterCount);
     srand((unsigned)time(NULL));
     for(int i = 0; i < letterCount; i++)
     {
-        bulletflag[i] = i;
         letters[i].ch = rand() % 26 + 'A';
         letters[i].x = rand() % 80;
         letters[i].y = - i * 2;
@@ -49,10 +61,8 @@ void initLetters()
     }
 }
 
-
-
-/***************¹¦ÄÜº¯Êı***************/
-//¶¨Î»µ½ÆÁÄ»µÄÄ³¸öÎ»ÖÃ
+/***************åŠŸèƒ½å‡½æ•°***************/
+//å®šä½åˆ°å±å¹•çš„æŸä¸ªä½ç½®
 void gotoxy(int x, int y)
 {
     HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -62,19 +72,21 @@ void gotoxy(int x, int y)
     SetConsoleCursorPosition(handle, coord);
 }
 
-//»æÖÆ×ÖÄ¸
+//ç»˜åˆ¶å­—æ¯
 void drawLetter(char ch, int x, int y)
 {
+    EnterCriticalSection(&csCursor);
     gotoxy(x, y);
     printf("%c", ch);
+    LeaveCriticalSection(&csCursor);
 }
-
+//è®¾ç½®çª—å£æ ‡é¢˜
 void setTitle(void *p)
 {
     while(1)
     {
         char str[30] = "";
-        sprintf(str, "title ×Ü×ÖÄ¸:%d ÏÂÂä×ÖÄ¸:%d »÷Âä:%d", letterCount, downCount, dropLetter);
+        sprintf(str, "title æ€»å­—æ¯:%d ä¸‹è½å­—æ¯:%d å‡»è½:%d", letterCount, downCount, dropLetter);
         system(str);
     }
 }
@@ -89,20 +101,18 @@ DWORD WINAPI runBullet(void *p)
     int x = letters[letterId].x;
     while(y > letters[letterId].y)
     {
-        EnterCriticalSection(&cs);
+
         drawLetter(' ', x, y);
         drawLetter(12, x, y - 1);
-        LeaveCriticalSection(&cs);
+
         Sleep(bulletSpeed);
         y--;
     }
-    EnterCriticalSection(&cs);
     drawLetter(' ', x, y);
     letters[letterId].life = 0;
     drawLetter(' ', letters[letterId].x, letters[letterId].y);
-    LeaveCriticalSection(&cs);
 }
-//letterMoving:ÈÃËùÓĞ×ÖÄ¸ÏÂ½µ
+//letterMoving:è®©æ‰€æœ‰å­—æ¯ä¸‹é™ä¸€ä¸ªä½ç½®
 void letterMoving()
 {
     int cnt = 0;
@@ -119,10 +129,8 @@ void letterMoving()
                 downCount++;
                 vis[i] = 1;
             }
-            EnterCriticalSection(&cs);
             drawLetter(' ', letters[i].x, letters[i].y);
             drawLetter(letters[i].ch, letters[i].x, letters[i].y + 1);
-            LeaveCriticalSection(&cs);
         }
         else if(letters[i].y > 25)
         {
@@ -130,11 +138,8 @@ void letterMoving()
         }
         else if(letters[i].y == 25)
         {
-            EnterCriticalSection(&cs);
             drawLetter(' ', letters[i].x, letters[i].y);
-            LeaveCriticalSection(&cs);
         }
-
         letters[i].y++;
     }
     if(cnt == 0)
@@ -142,7 +147,7 @@ void letterMoving()
         beginFlag = 0;
     }
 }
-
+//å­—æ¯ä¸æ–­ä¸‹é™
 DWORD WINAPI runLetter(void *p)
 {
     while(letters[letterCount - 1].y < 25)
@@ -153,83 +158,89 @@ DWORD WINAPI runLetter(void *p)
     beginFlag = 0;
 }
 
-//Òş²Ø¿ØÖÆÌ¨¹â±ê
+//éšè—æ§åˆ¶å°å…‰æ ‡
 void hideCursor()
 {
         HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
         CONSOLE_CURSOR_INFO CursorInfo;
-        GetConsoleCursorInfo(handle, &CursorInfo);//»ñÈ¡¿ØÖÆÌ¨¹â±êĞÅÏ¢
-        CursorInfo.bVisible = 0; //Òş²Ø¿ØÖÆÌ¨¹â±ê
-        SetConsoleCursorInfo(handle, &CursorInfo);//ÉèÖÃ¿ØÖÆÌ¨¹â±ê×´Ì¬
+        GetConsoleCursorInfo(handle, &CursorInfo);//è·å–æ§åˆ¶å°å…‰æ ‡ä¿¡æ¯
+        CursorInfo.bVisible = 0; //éšè—æ§åˆ¶å°å…‰æ ‡
+        SetConsoleCursorInfo(handle, &CursorInfo);//è®¾ç½®æ§åˆ¶å°å…‰æ ‡çŠ¶æ€
 }
-
+//å¼€å§‹æ¸¸æˆæç¤º
 void gameBegin()
 {
     printf("-------------------------------------\n");
-    printf("    Ò»¸ö¼òµ¥µÄ´ò×ÖÓÎÏ·£¬°´ESCÍË³ö\n");
-    printf("       ½¨ÒéÌáÇ°ÇĞ»»³ÉÓ¢ÎÄÊäÈë·¨\n");
+    printf("    ä¸€ä¸ªç®€å•çš„æ‰“å­—æ¸¸æˆï¼ŒæŒ‰ESCé€€å‡º\n");
+    printf("       å»ºè®®æå‰åˆ‡æ¢æˆè‹±æ–‡è¾“å…¥æ³•\n");
     printf("-------------------------------------\n");
-    printf("ÇëÊäÈëÄãÒª´ò×ÖµÄÊıÁ¿:");
-    while(scanf("%d", &letterCount) != 1)
-    {
-        system("cls");
-        scanf("%*s");
-        printf("ÄúÊäÈëµÄÖµÓĞÎÊÌâ£¬ÇëÊäÈëÊı×Ö£¡\n");
-        printf("ÇëÊäÈëÄãÒª´ò×ÖµÄÊıÁ¿:");
-    }
+
     int type;
     int flag = 1;
     while(flag)
     {
-        printf("1-¼òµ¥\n2-ÖĞµÈ\n3-À§ÄÑ\n4-Ä§¹í\n");
-        printf("ÇëÑ¡ÔñÄãÒª´ò×ÖµÄµÈ¼¶:");
+        printf("1-ç®€å•\n2-ä¸­ç­‰\n3-å›°éš¾\n4-é­”é¬¼\n");
+        printf("è¯·é€‰æ‹©ä½ è¦æ‰“å­—çš„ç­‰çº§:");
         while(scanf("%d", &type) != 1)
         {
             system("cls");
             scanf("%*s");
-            printf("ÄúÊäÈëµÄÖµÓĞÎÊÌâ£¬ÇëÊäÈëÊı×Ö£¡\n");
-            printf("1-¼òµ¥\n2-ÖĞµÈ\n3-À§ÄÑ\n4-Ä§¹í\n");
-            printf("ÇëÑ¡ÔñÄãÒª´ò×ÖµÄµÈ¼¶:");
+            printf("æ‚¨è¾“å…¥çš„å€¼æœ‰é—®é¢˜ï¼Œè¯·è¾“å…¥æ•°å­—ï¼\n");
+            printf("1-ç®€å•\n2-ä¸­ç­‰\n3-å›°éš¾\n4-é­”é¬¼\n");
+            printf("è¯·é€‰æ‹©ä½ è¦æ‰“å­—çš„ç­‰çº§:");
         }
         switch(type)
         {
         case 1:
             speed = 500;
+            bulletSpeed = 30;
             flag = 0;
             break;
         case 2:
             speed = 350;
+            bulletSpeed = 25;
             flag = 0;
             break;
         case 3:
             speed = 250;
+            bulletSpeed = 20;
             flag = 0;
             break;
         case 4:
-            speed = 100;
+            speed = 150;
+            bulletSpeed = 10;
             flag = 0;
             break;
         default:
-            printf("ÄãÑ¡ÔñµÄÖµÓĞÎó£¬ÇëÖØĞÂÑ¡Ôñ\n");
+            printf("ä½ é€‰æ‹©çš„å€¼æœ‰è¯¯ï¼Œè¯·é‡æ–°é€‰æ‹©\n");
         }
     }
-
-    printf("×ÖÄ¸ÒÑ×¼±¸¾ÍĞ÷,");
+    printf("è¯·è¾“å…¥ä½ è¦æ‰“å­—çš„æ•°é‡:");
+    while(scanf("%d", &letterCount) != 1)
+    {
+        system("cls");
+        scanf("%*s");
+        printf("æ‚¨è¾“å…¥çš„å€¼æœ‰é—®é¢˜ï¼Œè¯·è¾“å…¥æ•°å­—ï¼\n");
+        printf("è¯·è¾“å…¥ä½ è¦æ‰“å­—çš„æ•°é‡:");
+    }
+    printf("å­—æ¯å·²å‡†å¤‡å°±ç»ª,");
     system("pause");
     system("cls");
 }
-
+//ç»“æŸæ¸¸æˆæç¤º
 void gameOver()
 {
     gotoxy(30, 12);
-    printf("×Ü×ÖÄ¸:%d¸ö Äú»÷Âä:%d¸ö ´íÎó°´¼ü:%d´Î", letterCount, dropLetter, errorCount);
+    printf("æ€»å­—æ¯:%dä¸ª æ‚¨å‡»è½:%dä¸ª é”™è¯¯æŒ‰é”®:%dæ¬¡", letterCount, dropLetter, errorCount);
 }
 
 int main()
 {
+    system("title æ‰“å­—æ¸¸æˆ");
     gameBegin();
     hideCursor();
-    InitializeCriticalSection(&cs);
+    InitializeCriticalSection(&csCursor);
+    init();
     initLetters();
     CreateThread(NULL, 0, runLetter, NULL, 0, NULL);
     _beginthread(setTitle, 0, NULL);
@@ -255,11 +266,10 @@ int main()
                 }
             }
             if(flag) errorCount++;
-            //printf("%c", ch);
         }
     }
     gameOver();
-    InitializeCriticalSection(&cs);
+    InitializeCriticalSection(&csCursor);
     system("\n\n\npause");
     return 0;
 }
